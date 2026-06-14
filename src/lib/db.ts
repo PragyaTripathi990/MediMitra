@@ -379,6 +379,145 @@ interface SeedFinding {
   status: string;
 }
 
+// A full analysis attached to each member's MOST RECENT seeded report, so the
+// Plan tab and the medicines/scheme cards are populated on first load (without
+// it, getLatestAnalysis returns null and Plan shows the empty state).
+const SEED_ANALYSIS: Record<string, ReportAnalysis> = {
+  rakesh: {
+    reportType: "Glycemic + Lipid Panel",
+    summary:
+      "Your blood sugar and cholesterol are drifting into the at-risk range — but small, consistent changes now can keep you out of the diabetes zone.",
+    healthScore: 42,
+    triage: {
+      level: "soon",
+      message: "Book a review with your physician in the next 1–2 weeks to discuss your rising HbA1c and lipids.",
+    },
+    findings: [
+      { name: "HbA1c (Glycated Hb)", value: "6.4 %", referenceRange: "4.0 – 5.6", status: "high", explanation: "Your 3-month average blood sugar is in the pre-diabetes range, close to the 6.5% diabetes threshold." },
+      { name: "Fasting Blood Glucose", value: "132 mg/dL", referenceRange: "70 – 100", status: "high", explanation: "Morning sugar is above normal, consistent with insulin resistance." },
+      { name: "LDL Cholesterol", value: "152 mg/dL", referenceRange: "< 100", status: "high", explanation: "‘Bad’ cholesterol is high, which adds to heart risk alongside high sugar." },
+      { name: "Triglycerides", value: "210 mg/dL", referenceRange: "< 150", status: "high", explanation: "Blood fats are elevated, often linked to refined carbs and sugar." },
+      { name: "Serum Potassium", value: "5.6 mmol/L", referenceRange: "3.5 – 5.1", status: "high", explanation: "Potassium is slightly high — worth rechecking, especially if you take BP medication." },
+    ],
+    alerts: [
+      { severity: "warning", title: "Pre-diabetes trending toward diabetes", detail: "HbA1c has risen steadily over two years and is projected to cross 6.5% by mid-2026." },
+      { severity: "warning", title: "Combined sugar + lipid risk", detail: "High LDL and triglycerides together with high sugar raise cardiovascular risk; diet changes help both." },
+    ],
+    dataQualityFlags: [],
+    lifestylePlan: {
+      diet: [
+        "Swap white rice for millets (bajra, ragi) or brown rice at least once a day.",
+        "Replace fried snacks with roasted chana, sprouts, or a handful of nuts.",
+        "Add dal and a green sabzi to every meal; cut sugary chai to once a day.",
+        "Avoid sweets, soft drinks and packaged juices — they spike sugar and triglycerides.",
+        "Use mustard or rice-bran oil and keep total oil under ~3 tsp/day.",
+      ],
+      activity: [
+        "30-min brisk walk after dinner, daily — the single best step for blood sugar.",
+        "Surya Namaskar — 10 rounds, 4×/week to improve insulin sensitivity.",
+        "Light resistance work (squats, wall push-ups), 2×/week.",
+        "Stand and stretch for 3 minutes every hour if you sit for long periods.",
+      ],
+    },
+    medicineGuidance: [
+      { topic: "Metformin (generic)", suggestion: "The generic costs ₹30–60/month vs ₹150+ for some brands — same molecule. Ask your doctor before any change." },
+      { topic: "Statin for high LDL", suggestion: "If your doctor starts a statin, generic atorvastatin is ₹40–80/month. Informational only — not a prescription." },
+    ],
+    schemeEligibility: {
+      likely: true,
+      scheme: "Ayushman Bharat (PM-JAY)",
+      note: "Chronic diabetes/cardiac care may be covered if your household is eligible — worth checking your ABHA-linked status.",
+    },
+    questionsForDoctor: [
+      "Should I start medication now, or try 3 months of lifestyle change first?",
+      "Why is my potassium high — could it be my BP medicine, and should it be rechecked?",
+      "What HbA1c target should I aim for at my next test?",
+    ],
+    followUp: { recommended: true, urgency: "within 2 weeks", reason: "Review rising HbA1c, high LDL/triglycerides and borderline-high potassium." },
+  },
+  sunita: {
+    reportType: "CBC + Thyroid + Vitamin Panel",
+    summary:
+      "Great progress — your hemoglobin, thyroid and vitamin D have all improved over the past two years and are now in the healthy range.",
+    healthScore: 80,
+    triage: { level: "routine", message: "Keep up your current routine and recheck at your next routine visit." },
+    findings: [
+      { name: "Hemoglobin", value: "12.3 g/dL", referenceRange: "12.0 – 15.5", status: "normal", explanation: "Your anemia has resolved — hemoglobin is back in the healthy range." },
+      { name: "TSH", value: "3.1 mIU/L", referenceRange: "0.4 – 4.0", status: "normal", explanation: "Thyroid function has normalized from earlier high values." },
+      { name: "Vitamin D", value: "36 ng/mL", referenceRange: "30 – 100", status: "normal", explanation: "Vitamin D is now sufficient after being deficient." },
+    ],
+    alerts: [
+      { severity: "info", title: "Sustained improvement", detail: "All three markers have trended into the normal range — continue your iron-rich diet and sunlight exposure." },
+    ],
+    dataQualityFlags: [],
+    lifestylePlan: {
+      diet: [
+        "Keep iron up with palak, methi, beetroot, jaggery and dates.",
+        "Pair iron foods with lemon or amla (vitamin C) to absorb more iron.",
+        "Continue vitamin-D foods: fortified milk, eggs, mushrooms.",
+        "A glass of milk or bowl of curd daily supports calcium alongside vitamin D.",
+      ],
+      activity: [
+        "20–30 min walk in morning sunlight, daily — helps vitamin D naturally.",
+        "Yoga or stretching, 3×/week for general well-being.",
+      ],
+    },
+    medicineGuidance: [
+      { topic: "Iron / Vitamin D supplements", suggestion: "If continued, generic ferrous + cholecalciferol are very low cost. Confirm dose with your doctor." },
+    ],
+    schemeEligibility: { likely: false, scheme: "", note: "" },
+    questionsForDoctor: [
+      "Can I now reduce or stop my iron / vitamin D supplements?",
+      "How often should I recheck my thyroid going forward?",
+    ],
+    followUp: { recommended: false, urgency: "routine", reason: "Markers improved into the healthy range; routine follow-up is sufficient." },
+  },
+  mohan: {
+    reportType: "Renal + BP Panel",
+    summary:
+      "Your kidney function and blood pressure need attention — creatinine is rising and eGFR is falling, which calls for a check-up soon.",
+    healthScore: 44,
+    triage: { level: "soon", message: "See your physician within 1–2 weeks to review kidney function and blood pressure control." },
+    findings: [
+      { name: "Serum Creatinine", value: "1.7 mg/dL", referenceRange: "0.7 – 1.3", status: "high", explanation: "Creatinine is above normal, suggesting reduced kidney filtration." },
+      { name: "eGFR", value: "50 mL/min", referenceRange: "> 90", status: "low", explanation: "Estimated filtration rate is reduced — early-stage kidney impairment." },
+      { name: "Systolic BP", value: "155 mmHg", referenceRange: "< 130", status: "high", explanation: "Blood pressure is high, which can further strain the kidneys." },
+      { name: "Fasting Blood Glucose", value: "124 mg/dL", referenceRange: "70 – 100", status: "high", explanation: "Sugar is mildly high and can also affect the kidneys over time." },
+    ],
+    alerts: [
+      { severity: "warning", title: "Declining kidney function", detail: "Creatinine up and eGFR down over recent reports — important to control BP and review medications." },
+      { severity: "warning", title: "Blood pressure not at target", detail: "Systolic BP is consistently above 130; better control protects the kidneys." },
+    ],
+    dataQualityFlags: [],
+    lifestylePlan: {
+      diet: [
+        "Reduce salt: avoid pickles, papad, namkeen and packaged foods to protect kidneys and BP.",
+        "Limit very high-potassium foods (coconut water, banana) until potassium is reviewed.",
+        "Choose moderate protein from dal and curd; avoid excess red meat.",
+        "Stay hydrated with plain water unless your doctor has advised a fluid limit.",
+      ],
+      activity: [
+        "Gentle 20–30 min walk daily, as tolerated.",
+        "Pranayama / slow breathing, 10 min/day, to help manage blood pressure.",
+      ],
+    },
+    medicineGuidance: [
+      { topic: "BP medication adherence", suggestion: "Taking BP medicine at the same time daily protects the kidneys. Generic options are low cost — review with your doctor." },
+    ],
+    schemeEligibility: {
+      likely: true,
+      scheme: "Ayushman Bharat (PM-JAY)",
+      note: "Kidney and hypertension care may be covered for eligible households — check your ABHA-linked status.",
+    },
+    questionsForDoctor: [
+      "Is my kidney decline fast enough to need a nephrologist?",
+      "Are any of my current medicines hard on the kidneys?",
+      "What home blood-pressure number should I aim for?",
+    ],
+    followUp: { recommended: true, urgency: "within 2 weeks", reason: "Review rising creatinine, falling eGFR and high blood pressure." },
+  },
+};
+
 function seedIfEmpty(db: Database.Database) {
   const count = (
     db.prepare("SELECT COUNT(*) as c FROM reports").get() as { c: number }
@@ -391,13 +530,22 @@ function seedIfEmpty(db: Database.Database) {
     healthScore: number,
     type: string,
     findings: SeedFinding[],
+    analysis?: ReportAnalysis,
   ) => {
     const info = db
       .prepare(
         `INSERT INTO reports (patient_id, report_date, report_type, health_score, summary, analysis_json, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(patientId, dateISO, type, healthScore, "Past report (seeded history).", "{}", dateISO);
+      .run(
+        patientId,
+        dateISO,
+        type,
+        healthScore,
+        analysis ? analysis.summary : "Past report (seeded history).",
+        analysis ? JSON.stringify(analysis) : "{}",
+        dateISO,
+      );
     const rid = Number(info.lastInsertRowid);
     const ins = db.prepare(
       `INSERT INTO metrics (report_id, patient_id, report_date, name, norm_key, value_num, status, reference_range)
@@ -445,7 +593,9 @@ function seedIfEmpty(db: Database.Database) {
         ref: mt.ref,
         status: statusFor(mt.values[i], mt.ref),
       }));
-      seed(patientId, `${d}T09:00:00.000Z`, scores[i], type, findings);
+      // Attach the full analysis to the latest report so Plan is populated.
+      const analysis = i === DATES.length - 1 ? SEED_ANALYSIS[patientId] : undefined;
+      seed(patientId, `${d}T09:00:00.000Z`, scores[i], type, findings, analysis);
     });
   };
 
