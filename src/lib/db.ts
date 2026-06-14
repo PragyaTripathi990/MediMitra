@@ -1,0 +1,485 @@
+import Database from "better-sqlite3";
+import path from "path";
+import type {
+  FamilyMember,
+  MetricTrend,
+  ReportAnalysis,
+  ReportSummaryRow,
+  Timeline,
+  TrendPoint,
+} from "./types";
+
+// The default demo family — seeded once into the `patients` table.
+// After seeding, the table is the source of truth (members can be added/removed).
+export const FAMILY: FamilyMember[] = [
+  { id: "rakesh", name: "Rakesh Sharma", relation: "You", age: 54 },
+  { id: "sunita", name: "Sunita Sharma", relation: "Wife", age: 49 },
+  { id: "mohan", name: "Mohan Sharma", relation: "Father", age: 78 },
+];
+
+export function getPatients(): FamilyMember[] {
+  const db = getDb(); // ensure seeded
+  const rows = db
+    .prepare(
+      "SELECT id, name, relation, age FROM patients ORDER BY sort_order ASC, created_at ASC",
+    )
+    .all() as FamilyMember[];
+  return rows.length ? rows : FAMILY;
+}
+
+// Slug an id from a name, keeping it unique against existing patients.
+function uniquePatientId(db: Database.Database, name: string): string {
+  const base =
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 24) || "member";
+  const exists = (id: string) =>
+    !!db.prepare("SELECT 1 FROM patients WHERE id = ?").get(id);
+  if (!exists(base)) return base;
+  for (let i = 2; i < 999; i++) {
+    const candidate = `${base}-${i}`;
+    if (!exists(candidate)) return candidate;
+  }
+  return `${base}-${Math.floor(performance.now())}`;
+}
+
+export function addPatient(
+  name: string,
+  relation: string,
+  age: number,
+): FamilyMember {
+  const db = getDb();
+  const id = uniquePatientId(db, name);
+  const maxOrder =
+    (
+      db.prepare("SELECT MAX(sort_order) as m FROM patients").get() as {
+        m: number | null;
+      }
+    ).m ?? 0;
+  const nowISO = new Date(Date.now()).toISOString();
+  db.prepare(
+    "INSERT INTO patients (id, name, relation, age, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(id, name.trim(), relation.trim() || "Family", Math.round(age) || 0, maxOrder + 1, nowISO);
+  return { id, name: name.trim(), relation: relation.trim() || "Family", age: Math.round(age) || 0 };
+}
+
+export function removePatient(id: string): void {
+  const db = getDb();
+  db.prepare("DELETE FROM metrics WHERE patient_id = ?").run(id);
+  db.prepare("DELETE FROM reports WHERE patient_id = ?").run(id);
+  db.prepare("DELETE FROM appointments WHERE patient_id = ?").run(id);
+  db.prepare("DELETE FROM patients WHERE id = ?").run(id);
+}
+
+// ---- connection ----
+let _db: Database.Database | null = null;
+
+// On serverless hosts (Vercel) the project dir is read-only — only /tmp is
+// writable — so the DB must live there. Locally it sits in the project root.
+// Override explicitly with MEDIMITRA_DB_PATH (e.g. a mounted volume in prod).
+const DB_PATH =
+  process.env.MEDIMITRA_DB_PATH ||
+  (process.env.VERCEL ? "/tmp/medimitra.db" : path.join(process.cwd(), "medimitra.db"));
+
+function getDb(): Database.Database {
+  if (_db) return _db;
+  _db = new Database(DB_PATH);
+  _db.pragma("journal_mode = WAL");
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id TEXT NOT NULL,
+      report_date TEXT NOT NULL,
+      report_type TEXT,
+      health_score INTEGER,
+      summary TEXT,
+      analysis_json TEXT,
+      created_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL,
+      patient_id TEXT NOT NULL,
+      report_date TEXT NOT NULL,
+      name TEXT,
+      norm_key TEXT,
+      value_num REAL,
+      status TEXT,
+      reference_range TEXT
+    );
+    CREATE TABLE IF NOT EXISTS appointments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id TEXT NOT NULL,
+      reason TEXT,
+      when_iso TEXT,
+      status TEXT,
+      hospital TEXT,
+      created_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS patients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      relation TEXT,
+      age INTEGER,
+      sort_order INTEGER,
+      created_at TEXT
+    );
+  `);
+  seedPatientsIfEmpty(_db);
+  seedIfEmpty(_db);
+  return _db;
+}
+
+// Seed the default family roster (independent of the reports seed, so it also
+// populates on a DB that already had reports before the patients table existed).
+function seedPatientsIfEmpty(db: Database.Database) {
+  const count = (
+    db.prepare("SELECT COUNT(*) as c FROM patients").get() as { c: number }
+  ).c;
+  if (count > 0) return;
+  const ins = db.prepare(
+    "INSERT INTO patients (id, name, relation, age, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  FAMILY.forEach((m, i) => ins.run(m.id, m.name, m.relation, m.age, i, "2024-01-01T00:00:00.000Z"));
+}
+
+// ---- helpers ----
+export function normKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "") // drop parentheticals
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
+}
+
+function parseNum(value: string): number | null {
+  const m = value.match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+// ---- write ----
+export function insertReport(
+  patientId: string,
+  reportDateISO: string,
+  analysis: ReportAnalysis,
+): number {
+  const db = getDb();
+  const day = reportDateISO.slice(0, 10);
+  // Replace any report for the same patient + day (keeps demo timeline clean).
+  const dupes = db
+    .prepare(
+      "SELECT id FROM reports WHERE patient_id = ? AND substr(report_date,1,10) = ?",
+    )
+    .all(patientId, day) as { id: number }[];
+  for (const d of dupes) {
+    db.prepare("DELETE FROM metrics WHERE report_id = ?").run(d.id);
+    db.prepare("DELETE FROM reports WHERE id = ?").run(d.id);
+  }
+
+  const info = db
+    .prepare(
+      `INSERT INTO reports (patient_id, report_date, report_type, health_score, summary, analysis_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      patientId,
+      reportDateISO,
+      analysis.reportType,
+      Math.round(Number(analysis.healthScore) || 0),
+      analysis.summary,
+      JSON.stringify(analysis),
+      reportDateISO,
+    );
+  const reportId = Number(info.lastInsertRowid);
+
+  const insMetric = db.prepare(
+    `INSERT INTO metrics (report_id, patient_id, report_date, name, norm_key, value_num, status, reference_range)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const f of analysis.findings) {
+    const num = parseNum(f.value);
+    if (num === null) continue;
+    insMetric.run(
+      reportId,
+      patientId,
+      reportDateISO,
+      f.name,
+      normKey(f.name),
+      num,
+      f.status,
+      f.referenceRange,
+    );
+  }
+  return reportId;
+}
+
+// ---- read / trends ----
+function linearProjectDays(
+  points: TrendPoint[],
+  threshold: number,
+): number | null {
+  // Least-squares slope of value vs. days-since-first; days until `threshold`.
+  const t0 = new Date(points[0].date).getTime();
+  const xs = points.map((p) => (new Date(p.date).getTime() - t0) / 86400000);
+  const ys = points.map((p) => p.value);
+  const n = xs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0,
+    den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - mx) * (ys[i] - my);
+    den += (xs[i] - mx) ** 2;
+  }
+  if (den === 0) return null;
+  const slope = num / den; // per day
+  const latest = ys[ys.length - 1];
+  if (slope <= 0 || latest >= threshold) return null;
+  return (threshold - latest) / slope;
+}
+
+function monthYear(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+export function getTimeline(patientId: string): Timeline {
+  const db = getDb();
+  const reportRows = db
+    .prepare(
+      "SELECT report_date as date, report_type as reportType, health_score as healthScore FROM reports WHERE patient_id = ? ORDER BY report_date ASC",
+    )
+    .all(patientId) as ReportSummaryRow[];
+
+  const metricRows = db
+    .prepare(
+      "SELECT name, norm_key, report_date, value_num, status FROM metrics WHERE patient_id = ? ORDER BY report_date ASC",
+    )
+    .all(patientId) as {
+    name: string;
+    norm_key: string;
+    report_date: string;
+    value_num: number;
+    status: string;
+  }[];
+
+  const byKey = new Map<
+    string,
+    { name: string; points: TrendPoint[] }
+  >();
+  for (const r of metricRows) {
+    if (!byKey.has(r.norm_key))
+      byKey.set(r.norm_key, { name: r.name, points: [] });
+    const entry = byKey.get(r.norm_key)!;
+    entry.name = r.name; // latest name wins
+    entry.points.push({
+      date: r.report_date,
+      value: r.value_num,
+      status: r.status,
+    });
+  }
+
+  const metrics: MetricTrend[] = [];
+  for (const [key, { name, points }] of byKey) {
+    if (points.length < 2) continue;
+    const first = points[0].value;
+    const last = points[points.length - 1].value;
+    const direction =
+      last > first * 1.02 ? "rising" : last < first * 0.98 ? "falling" : "stable";
+
+    let projection: string | undefined;
+    if (key === "hba1c") {
+      const days = linearProjectDays(points, 6.5);
+      if (days !== null && days < 1500) {
+        const eta = new Date(
+          new Date(points[points.length - 1].date).getTime() +
+            days * 86400000,
+        ).toISOString();
+        projection = `At this pace, HbA1c reaches the diabetes threshold (6.5%) around ${monthYear(eta)}.`;
+      }
+    }
+
+    metrics.push({
+      key,
+      name,
+      points,
+      direction,
+      latestStatus: points[points.length - 1].status,
+      projection,
+    });
+  }
+
+  // Most-changed metrics first.
+  metrics.sort((a, b) => {
+    const ca = Math.abs(a.points[a.points.length - 1].value - a.points[0].value);
+    const cb = Math.abs(b.points[b.points.length - 1].value - b.points[0].value);
+    return cb - ca;
+  });
+
+  return { reports: reportRows, metrics };
+}
+
+// ---- appointments (Phase 3) ----
+export function getLatestAnalysis(patientId: string): ReportAnalysis | null {
+  const db = getDb();
+  const row = db
+    .prepare(
+      "SELECT analysis_json FROM reports WHERE patient_id = ? AND analysis_json != '{}' ORDER BY report_date DESC LIMIT 1",
+    )
+    .get(patientId) as { analysis_json: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.analysis_json) as ReportAnalysis;
+  } catch {
+    return null;
+  }
+}
+
+export function getAppointments(patientId: string): {
+  reason: string;
+  whenISO: string;
+  status: string;
+}[] {
+  const db = getDb();
+  return db
+    .prepare(
+      "SELECT reason, when_iso as whenISO, status, hospital FROM appointments WHERE patient_id = ? ORDER BY when_iso ASC",
+    )
+    .all(patientId) as {
+    reason: string;
+    whenISO: string;
+    status: string;
+    hospital?: string;
+  }[];
+}
+
+export function bookAppointment(
+  patientId: string,
+  reason: string,
+  whenISO: string,
+  hospital?: string,
+): number {
+  const db = getDb();
+  const info = db
+    .prepare(
+      "INSERT INTO appointments (patient_id, reason, when_iso, status, hospital, created_at) VALUES (?, ?, ?, 'confirmed', ?, ?)",
+    )
+    .run(patientId, reason, whenISO, hospital ?? null, whenISO);
+  return Number(info.lastInsertRowid);
+}
+
+// ---- seed family history ----
+interface SeedFinding {
+  name: string;
+  value: string;
+  ref: string;
+  status: string;
+}
+
+function seedIfEmpty(db: Database.Database) {
+  const count = (
+    db.prepare("SELECT COUNT(*) as c FROM reports").get() as { c: number }
+  ).c;
+  if (count > 0) return;
+
+  const seed = (
+    patientId: string,
+    dateISO: string,
+    healthScore: number,
+    type: string,
+    findings: SeedFinding[],
+  ) => {
+    const info = db
+      .prepare(
+        `INSERT INTO reports (patient_id, report_date, report_type, health_score, summary, analysis_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(patientId, dateISO, type, healthScore, "Past report (seeded history).", "{}", dateISO);
+    const rid = Number(info.lastInsertRowid);
+    const ins = db.prepare(
+      `INSERT INTO metrics (report_id, patient_id, report_date, name, norm_key, value_num, status, reference_range)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const f of findings) {
+      ins.run(rid, patientId, dateISO, f.name, normKey(f.name), parseNum(f.value), f.status, f.ref);
+    }
+  };
+
+  // Derive status from the value vs. its reference range.
+  const statusFor = (v: number, ref: string): string => {
+    let m = ref.match(/^([\d.]+)\s*[–-]\s*([\d.]+)$/);
+    if (m) {
+      const lo = +m[1];
+      const hi = +m[2];
+      if (v < lo) return "low";
+      if (v > hi) return "high";
+      if (v >= hi - (hi - lo) * 0.08) return "borderline";
+      return "normal";
+    }
+    m = ref.match(/^<\s*([\d.]+)$/);
+    if (m) return v >= +m[1] ? "high" : v >= +m[1] * 0.95 ? "borderline" : "normal";
+    m = ref.match(/^>\s*([\d.]+)$/);
+    if (m) return v < +m[1] ? "low" : "normal";
+    return "normal";
+  };
+
+  // 7 visits spanning ~2 years → rich, dated time series for the demo.
+  const DATES = [
+    "2024-06-12", "2024-10-08", "2025-02-14", "2025-06-20",
+    "2025-10-15", "2026-02-18", "2026-06-05",
+  ];
+
+  const member = (
+    patientId: string,
+    type: string,
+    scores: number[],
+    metrics: { name: string; ref: string; values: number[] }[],
+  ) => {
+    DATES.forEach((d, i) => {
+      const findings: SeedFinding[] = metrics.map((mt) => ({
+        name: mt.name,
+        value: String(mt.values[i]),
+        ref: mt.ref,
+        status: statusFor(mt.values[i], mt.ref),
+      }));
+      seed(patientId, `${d}T09:00:00.000Z`, scores[i], type, findings);
+    });
+  };
+
+  // Rakesh (you, 54): diabetes + lipids worsening — the hero story.
+  member("rakesh", "Glycemic + Lipid Panel", [72, 68, 64, 60, 55, 48, 42], [
+    { name: "HbA1c (Glycated Hb)", ref: "4.0 – 5.6", values: [5.4, 5.6, 5.8, 5.9, 6.0, 6.2, 6.4] },
+    { name: "Fasting Blood Glucose", ref: "70 – 100", values: [96, 102, 108, 112, 118, 124, 132] },
+    { name: "LDL Cholesterol", ref: "< 100", values: [120, 128, 135, 140, 146, 150, 152] },
+    { name: "Triglycerides", ref: "< 150", values: [150, 165, 178, 185, 195, 205, 210] },
+    { name: "Serum Potassium", ref: "3.5 – 5.1", values: [4.4, 4.6, 4.8, 4.9, 5.1, 5.3, 5.6] },
+  ]);
+
+  // Sunita (wife, 49): anemia + thyroid + vitamin D, IMPROVING — a hopeful story.
+  member("sunita", "CBC + Thyroid + Vitamin", [56, 60, 64, 68, 72, 76, 80], [
+    { name: "Hemoglobin", ref: "12.0 – 15.5", values: [9.8, 10.2, 10.6, 11.0, 11.4, 11.8, 12.3] },
+    { name: "TSH", ref: "0.4 – 4.0", values: [6.2, 5.8, 5.0, 4.4, 3.8, 3.4, 3.1] },
+    { name: "Vitamin D", ref: "30 – 100", values: [14, 16, 19, 23, 27, 31, 36] },
+  ]);
+
+  // Mohan (father, 78): hypertension + kidney DECLINING — the caregiver alert.
+  member("mohan", "Renal + BP Panel", [62, 58, 55, 52, 49, 47, 44], [
+    { name: "Serum Creatinine", ref: "0.7 – 1.3", values: [1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7] },
+    { name: "Systolic BP", ref: "< 130", values: [134, 138, 142, 146, 150, 152, 155] },
+    { name: "eGFR", ref: "> 90", values: [72, 68, 64, 60, 56, 54, 50] },
+    { name: "Fasting Blood Glucose", ref: "70 – 100", values: [98, 104, 110, 112, 116, 120, 124] },
+  ]);
+}
+
+// Wipe all data and re-seed the pristine demo family (for presenter reset).
+export function resetDemo(): void {
+  const db = getDb();
+  db.exec("DELETE FROM metrics; DELETE FROM reports; DELETE FROM appointments; DELETE FROM patients;");
+  seedPatientsIfEmpty(db);
+  seedIfEmpty(db);
+}
+
+export { getDb };
