@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7faf9;
+  --foreground: #0f2e2a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Staggered entrance for dashboard sections (premium feel). */
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise > * {
+  animation: riseIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.rise > *:nth-child(2) { animation-delay: 0.05s; }
+.rise > *:nth-child(3) { animation-delay: 0.1s; }
+.rise > *:nth-child(4) { animation-delay: 0.15s; }
+.rise > *:nth-child(5) { animation-delay: 0.2s; }
+.rise > *:nth-child(n + 6) { animation-delay: 0.25s; }
+
+.rise > *:nth-child(7) { animation-delay: 0.3s; }
+
+/* Hover lift for interactive cards (Linear-style). */
+.lift {
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.22s ease,
+    background-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+.lift:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 16px 50px -18px rgba(45, 212, 191, 0.25);
+}
+
+/* Animated aurora glow behind the dashboard. */
+@keyframes auroraFloat {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.55; }
+  50% { transform: translateX(-50%) translateY(5%) scale(1.18); opacity: 0.85; }
+}
+.aurora {
+  position: fixed;
+  top: -18%;
+  left: 50%;
+  width: 90%;
+  height: 60vh;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    50% 50% at 50% 0%,
+    rgba(45, 212, 191, 0.18),
+    rgba(99, 102, 241, 0.06) 45%,
+    transparent 72%
+  );
+  filter: blur(28px);
+  animation: auroraFloat 14s ease-in-out infinite;
+}
+
+@keyframes auroraFloat2 {
+  0%, 100% { transform: translateX(-45%) translateY(0) scale(1); opacity: 0.4; }
+  50% { transform: translateX(-55%) translateY(6%) scale(1.25); opacity: 0.7; }
+}
+.aurora2 {
+  position: fixed;
+  top: -6%;
+  left: 50%;
+  width: 80%;
+  height: 55vh;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    45% 45% at 45% 0%,
+    rgba(129, 140, 248, 0.16),
+    rgba(236, 72, 153, 0.05) 50%,
+    transparent 72%
+  );
+  filter: blur(44px);
+  animation: auroraFloat2 19s ease-in-out infinite;
+}
+
+/* Shimmer sweep for accent banners. */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 7s linear infinite;
+}
+
+/* Sparkline line-draw. */
+@keyframes drawLine {
+  from { stroke-dashoffset: var(--len); }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Linear/Vercel-style dot grid texture. */
+.dotgrid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Chat: typing indicator + message entrance + FAB pulse. */
+@keyframes typingDot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+.typing span { animation: typingDot 1.2s infinite; }
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.msg-in { animation: msgIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes fabPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.45); }
+  70% { box-shadow: 0 0 0 14px rgba(45, 212, 191, 0); }
+}
+.fab-pulse { animation: fabPulse 2.6s infinite; }
+
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.panel-in { animation: panelIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise > *,
+  .aurora,
+  .aurora2,
+  .shimmer,
+  .typing span,
+  .msg-in,
+  .fab-pulse,
+  .panel-in {
+    animation: none;
+  }
+}
