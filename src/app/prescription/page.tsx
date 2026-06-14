@@ -15,6 +15,9 @@ export default function PrescriptionPage() {
   const [result, setResult] = useState<PrescriptionResult | null>(null);
   const [choice, setChoice] = useState<Record<number, "brand" | "generic">>({});
   const [ordered, setOrdered] = useState(false);
+  // The simulated "doctor inbox" is demo-only; a real signed-in user has no
+  // fake prescription waiting, so we hide it in personal mode.
+  const [personal, setPersonal] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const t = (en: string, hi: string) => (language === "hi" ? hi : en);
@@ -24,6 +27,7 @@ export default function PrescriptionPage() {
     const p = new URLSearchParams(window.location.search);
     const lang = parseLang(p.get("lang"));
     if (p.get("lang")) setLanguage(lang);
+    setPersonal(localStorage.getItem("mm_view") === "real" && !!localStorage.getItem("mm_real_id"));
     if (p.get("sample") === "1") loadSample(true, lang);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -107,7 +111,9 @@ export default function PrescriptionPage() {
 
         {!result && !loading && (
           <div className="space-y-5">
-            {/* Doctor inbox — prescriptions auto-arrive from connected clinics (ABDM) */}
+            {/* Doctor inbox (demo-only) — prescriptions auto-arrive over ABDM */}
+            {!personal && (
+            <>
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <span className="relative flex h-2 w-2">
@@ -134,10 +140,12 @@ export default function PrescriptionPage() {
               </button>
             </div>
 
-            {/* Manual upload — the fallback */}
+            {/* divider only when the inbox is shown (demo mode) */}
             <div className="flex items-center gap-3 text-[11px] uppercase tracking-widest text-zinc-600">
               <span className="h-px flex-1 bg-white/10" /> {t("or upload manually", "या स्वयं अपलोड करें")} <span className="h-px flex-1 bg-white/10" />
             </div>
+            </>
+            )}
             <div
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => e.preventDefault()}

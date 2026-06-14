@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import path from "path";
+import crypto from "node:crypto";
 import { LANG_LOCALE } from "./lang";
 import type {
   FamilyMember,
@@ -19,61 +20,103 @@ export const FAMILY: FamilyMember[] = [
   { id: "mohan", name: "Mohan Sharma", relation: "Father", age: 78 },
 ];
 
-export function getPatients(): FamilyMember[] {
+export function getPatients(accountId: string): FamilyMember[] {
   const db = getDb(); // ensure seeded
-  const rows = db
+  return db
     .prepare(
-      "SELECT id, name, relation, age FROM patients ORDER BY sort_order ASC, created_at ASC",
+      "SELECT id, name, relation, age FROM patients WHERE account_id = ? ORDER BY sort_order ASC, created_at ASC",
     )
-    .all() as FamilyMember[];
-  return rows.length ? rows : FAMILY;
+    .all(accountId) as FamilyMember[];
 }
 
-// Slug an id from a name, keeping it unique against existing patients.
-function uniquePatientId(db: Database.Database, name: string): string {
-  const base =
-    name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 24) || "member";
-  const exists = (id: string) =>
-    !!db.prepare("SELECT 1 FROM patients WHERE id = ?").get(id);
-  if (!exists(base)) return base;
-  for (let i = 2; i < 999; i++) {
-    const candidate = `${base}-${i}`;
-    if (!exists(candidate)) return candidate;
-  }
-  return `${base}-${Math.floor(performance.now())}`;
+// Real-account patient ids are random & unguessable — they double as the
+// per-patient access key, so per-report reads stay isolated without an
+// account_id column on every table.
+function newPatientId(): string {
+  return "p_" + crypto.randomBytes(8).toString("hex");
 }
 
 export function addPatient(
+  accountId: string,
   name: string,
   relation: string,
   age: number,
 ): FamilyMember {
   const db = getDb();
-  const id = uniquePatientId(db, name);
+  const id = newPatientId();
   const maxOrder =
     (
-      db.prepare("SELECT MAX(sort_order) as m FROM patients").get() as {
+      db.prepare("SELECT MAX(sort_order) as m FROM patients WHERE account_id = ?").get(accountId) as {
         m: number | null;
       }
     ).m ?? 0;
   const nowISO = new Date(Date.now()).toISOString();
   db.prepare(
-    "INSERT INTO patients (id, name, relation, age, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(id, name.trim(), relation.trim() || "Family", Math.round(age) || 0, maxOrder + 1, nowISO);
+    "INSERT INTO patients (id, account_id, name, relation, age, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, accountId, name.trim(), relation.trim() || "Family", Math.round(age) || 0, maxOrder + 1, nowISO);
   return { id, name: name.trim(), relation: relation.trim() || "Family", age: Math.round(age) || 0 };
 }
 
-export function removePatient(id: string): void {
+export function removePatient(accountId: string, id: string): void {
   const db = getDb();
   db.prepare("DELETE FROM metrics WHERE patient_id = ?").run(id);
   db.prepare("DELETE FROM reports WHERE patient_id = ?").run(id);
   db.prepare("DELETE FROM appointments WHERE patient_id = ?").run(id);
-  db.prepare("DELETE FROM patients WHERE id = ?").run(id);
+  db.prepare("DELETE FROM patients WHERE id = ? AND account_id = ?").run(id, accountId);
+}
+
+// ---- accounts (lightweight email + password; production = OAuth/ABHA) ----
+export interface Account {
+  id: string;
+  name: string;
+}
+
+function hashPassword(pw: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(pw, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(pw: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const test = crypto.scryptSync(pw, salt, 64).toString("hex");
+  const a = Buffer.from(hash, "hex");
+  const b = Buffer.from(test, "hex");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+export function createAccount(
+  name: string,
+  email: string,
+  password: string,
+  age: number,
+): Account | { error: string } {
+  const db = getDb();
+  const emailNorm = email.trim().toLowerCase();
+  if (db.prepare("SELECT 1 FROM accounts WHERE email = ?").get(emailNorm))
+    return { error: "An account with this email already exists." };
+  const id = "a_" + crypto.randomBytes(16).toString("hex");
+  const nowISO = new Date(Date.now()).toISOString();
+  db.prepare(
+    "INSERT INTO accounts (id, name, email, pass_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+  ).run(id, name.trim(), emailNorm, hashPassword(password), nowISO);
+  // Seed the new workspace with the user themselves as the first patient.
+  db.prepare(
+    "INSERT INTO patients (id, account_id, name, relation, age, sort_order, created_at) VALUES (?, ?, ?, 'You', ?, 0, ?)",
+  ).run(newPatientId(), id, name.trim(), Math.round(age) || 0, nowISO);
+  return { id, name: name.trim() };
+}
+
+export function loginAccount(email: string, password: string): Account | null {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id, name, pass_hash FROM accounts WHERE email = ?")
+    .get(email.trim().toLowerCase()) as
+    | { id: string; name: string; pass_hash: string }
+    | undefined;
+  if (!row || !verifyPassword(password, row.pass_hash)) return null;
+  return { id: row.id, name: row.name };
 }
 
 // ---- connection ----
@@ -123,27 +166,44 @@ function getDb(): Database.Database {
     );
     CREATE TABLE IF NOT EXISTS patients (
       id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL DEFAULT 'demo',
       name TEXT NOT NULL,
       relation TEXT,
       age INTEGER,
       sort_order INTEGER,
       created_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      pass_hash TEXT NOT NULL,
+      created_at TEXT
+    );
   `);
+  // Migrate an older DB that predates multi-account: add the column + backfill.
+  const cols = _db.prepare("PRAGMA table_info(patients)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "account_id")) {
+    _db.exec("ALTER TABLE patients ADD COLUMN account_id TEXT NOT NULL DEFAULT 'demo'");
+    _db.exec("UPDATE patients SET account_id = 'demo'");
+  }
   seedPatientsIfEmpty(_db);
   seedIfEmpty(_db);
   return _db;
 }
 
+// The demo workspace every visitor shares (the seeded Sharma family).
+export const DEMO = "demo";
+
 // Seed the default family roster (independent of the reports seed, so it also
 // populates on a DB that already had reports before the patients table existed).
 function seedPatientsIfEmpty(db: Database.Database) {
   const count = (
-    db.prepare("SELECT COUNT(*) as c FROM patients").get() as { c: number }
+    db.prepare("SELECT COUNT(*) as c FROM patients WHERE account_id = 'demo'").get() as { c: number }
   ).c;
   if (count > 0) return;
   const ins = db.prepare(
-    "INSERT INTO patients (id, name, relation, age, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO patients (id, account_id, name, relation, age, sort_order, created_at) VALUES (?, 'demo', ?, ?, ?, ?, ?)",
   );
   FAMILY.forEach((m, i) => ins.run(m.id, m.name, m.relation, m.age, i, "2024-01-01T00:00:00.000Z"));
 }
@@ -621,8 +681,13 @@ const SEED_HI: Record<string, Partial<ReportAnalysis>> = {
 };
 
 function seedIfEmpty(db: Database.Database) {
+  // Scope to the demo workspace so real users' uploads never block re-seeding.
   const count = (
-    db.prepare("SELECT COUNT(*) as c FROM reports").get() as { c: number }
+    db
+      .prepare(
+        "SELECT COUNT(*) as c FROM reports r JOIN patients p ON r.patient_id = p.id WHERE p.account_id = 'demo'",
+      )
+      .get() as { c: number }
   ).c;
   if (count > 0) return;
 
@@ -727,10 +792,16 @@ function seedIfEmpty(db: Database.Database) {
   ]);
 }
 
-// Wipe all data and re-seed the pristine demo family (for presenter reset).
+// Re-seed the pristine demo family. Only the DEMO workspace is touched —
+// real users' accounts and data are never affected.
 export function resetDemo(): void {
   const db = getDb();
-  db.exec("DELETE FROM metrics; DELETE FROM reports; DELETE FROM appointments; DELETE FROM patients;");
+  db.exec(`
+    DELETE FROM metrics WHERE patient_id IN (SELECT id FROM patients WHERE account_id = 'demo');
+    DELETE FROM reports WHERE patient_id IN (SELECT id FROM patients WHERE account_id = 'demo');
+    DELETE FROM appointments WHERE patient_id IN (SELECT id FROM patients WHERE account_id = 'demo');
+    DELETE FROM patients WHERE account_id = 'demo';
+  `);
   seedPatientsIfEmpty(db);
   seedIfEmpty(db);
 }

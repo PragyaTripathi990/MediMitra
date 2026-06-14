@@ -9,6 +9,7 @@ import BookNow from "@/components/BookNow";
 import ChatAssistant from "@/components/ChatAssistant";
 import Landing from "@/components/Landing";
 import LanguageSelect from "@/components/LanguageSelect";
+import AuthModal from "@/components/AuthModal";
 import { LANG_LOCALE, parseLang } from "@/lib/lang";
 import {
   IconToday,
@@ -74,43 +75,66 @@ export default function Dashboard() {
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", relation: "", age: "" });
   const [addBusy, setAddBusy] = useState(false);
+  // Two workspaces: the shared "demo" family vs the user's personal account.
+  const [realAcct, setRealAcct] = useState<{ id: string; name: string } | null>(null);
+  const [view, setView] = useState<"demo" | "real">("demo");
+  const [authOpen, setAuthOpen] = useState(false);
+
+  const account = view === "real" && realAcct ? realAcct.id : "demo";
+  const acctHeader = useCallback(() => ({ "x-mm-account": account }), [account]);
 
   const t = (en: string, hi: string) => (language === "hi" ? hi : en);
 
   const reloadPatients = useCallback(
-    () => fetch("/api/patients").then((r) => r.json()).then((d) => setPatients(d.patients ?? [])).catch(() => {}),
-    [],
+    () => fetch("/api/patients", { headers: acctHeader() }).then((r) => r.json()).then((d) => setPatients(d.patients ?? [])).catch(() => {}),
+    [acctHeader],
   );
   const reloadFamily = useCallback(
     (lang: Language) =>
-      fetch(`/api/family?lang=${lang}`).then((r) => r.json()).then((d) => setFamily(d.members ?? [])).catch(() => {}),
-    [],
+      fetch(`/api/family?lang=${lang}`, { headers: acctHeader() }).then((r) => r.json()).then((d) => setFamily(d.members ?? [])).catch(() => {}),
+    [acctHeader],
   );
 
   useEffect(() => {
     setAuthed(localStorage.getItem("mm_session") === "1");
     setAuthReady(true);
-    reloadPatients();
+    const rid = localStorage.getItem("mm_real_id");
+    const rname = localStorage.getItem("mm_real_name");
+    if (rid && rname) setRealAcct({ id: rid, name: rname });
+    // Always boot into the Demo workspace (presenter-safe). The personal
+    // account stays available via the toggle; we just don't auto-resume it.
     const params = new URLSearchParams(window.location.search);
     const tp = params.get("tab");
     if (tp && ["today", "trends", "family", "plan", "records"].includes(tp)) {
       setTab(tp as Tab);
     }
     if (params.get("lang")) setLanguage(parseLang(params.get("lang")));
+  }, []);
+
+  // (Re)load the roster whenever the active account changes.
+  useEffect(() => {
+    reloadPatients();
   }, [reloadPatients]);
+
+  // Keep the selected patient valid for the current account / after a removal.
+  useEffect(() => {
+    if (patients.length && !patients.some((p) => p.id === patient)) {
+      setPatient(patients[0].id);
+    }
+  }, [patients, patient]);
 
   const load = useCallback(async (p: string, lang: Language) => {
     try {
       const [td, tl] = await Promise.all([
-        fetch(`/api/today?patient=${p}&lang=${lang}`).then((r) => r.json()),
-        fetch(`/api/timeline?patient=${p}&lang=${lang}`).then((r) => r.json()),
+        fetch(`/api/today?patient=${p}&lang=${lang}`, { headers: acctHeader() }).then((r) => r.json()),
+        fetch(`/api/timeline?patient=${p}&lang=${lang}`, { headers: acctHeader() }).then((r) => r.json()),
       ]);
       setToday(td as TodayPayload);
       setTimeline(tl as Timeline);
     } catch {
       /* keep */
     }
-  }, []);
+  }, [acctHeader]);
 
   useEffect(() => {
     load(patient, language);
@@ -120,13 +144,39 @@ export default function Dashboard() {
     reloadFamily(language);
   }, [language, patient, reloadFamily]);
 
+  function goDemo() {
+    setView("demo");
+    localStorage.setItem("mm_view", "demo");
+  }
+  function goPersonal() {
+    if (!realAcct) { setAuthOpen(true); return; }
+    setView("real");
+    localStorage.setItem("mm_view", "real");
+  }
+  function onAuthSuccess(acct: { id: string; name: string }) {
+    localStorage.setItem("mm_real_id", acct.id);
+    localStorage.setItem("mm_real_name", acct.name);
+    localStorage.setItem("mm_view", "real");
+    setRealAcct(acct);
+    setView("real");
+    setAuthOpen(false);
+    setTab("today");
+  }
+  function signOutAccount() {
+    localStorage.removeItem("mm_real_id");
+    localStorage.removeItem("mm_real_name");
+    localStorage.setItem("mm_view", "demo");
+    setRealAcct(null);
+    setView("demo");
+  }
+
   async function addMember() {
     if (!addForm.name.trim() || addBusy) return;
     setAddBusy(true);
     try {
       await fetch("/api/family", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...acctHeader() },
         body: JSON.stringify({ name: addForm.name, relation: addForm.relation, age: addForm.age }),
       });
       setAddForm({ name: "", relation: "", age: "" });
@@ -139,8 +189,7 @@ export default function Dashboard() {
 
   async function removeMember(id: string) {
     if (!window.confirm(t("Remove this family member and all their records?", "इस सदस्य और उनके सभी रिकॉर्ड हटाएँ?"))) return;
-    await fetch(`/api/family?id=${id}`, { method: "DELETE" });
-    if (patient === id) setPatient("rakesh");
+    await fetch(`/api/family?id=${id}`, { method: "DELETE", headers: acctHeader() });
     await Promise.all([reloadPatients(), reloadFamily(language)]);
   }
 
@@ -595,6 +644,7 @@ export default function Dashboard() {
     <div className="dotgrid relative min-h-screen text-zinc-200" style={{ background: "#060708" }}>
       <div className="aurora" />
       <div className="aurora2" />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onSuccess={onAuthSuccess} language={language} />
       <div className="relative z-10 mx-auto flex max-w-6xl">
         {/* Sidebar (desktop) */}
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-white/10 p-5 md:flex">
@@ -619,10 +669,36 @@ export default function Dashboard() {
               <IconPill size={18} /> {t("Meds", "दवाएँ")}
             </Link>
           </nav>
-          <div className="mt-auto">
-            <div className="mb-2">
-              <LanguageSelect value={language} onChange={setLanguage} className="w-full [&>select]:w-full" />
+          <div className="mt-auto space-y-2">
+            {/* Workspace toggle: shared demo family vs your personal account */}
+            <div className="flex overflow-hidden rounded-xl border border-white/10 text-xs">
+              <button
+                onClick={goDemo}
+                className={`flex-1 px-2 py-1.5 font-medium transition ${view === "demo" ? "bg-teal-500 text-zinc-950" : "text-zinc-400 hover:bg-white/5"}`}
+              >
+                {t("Demo", "डेमो")}
+              </button>
+              <button
+                onClick={goPersonal}
+                className={`flex-1 truncate px-2 py-1.5 font-medium transition ${view === "real" ? "bg-teal-500 text-zinc-950" : "text-zinc-400 hover:bg-white/5"}`}
+              >
+                {realAcct ? realAcct.name.split(" ")[0] : t("My family", "मेरा परिवार")}
+              </button>
             </div>
+            {view === "demo" ? (
+              <p className="px-1 text-[11px] leading-snug text-zinc-500">
+                {t("Demo data · ", "डेमो डेटा · ")}
+                <button onClick={goPersonal} className="text-teal-400 hover:underline">
+                  {realAcct ? t("switch to yours", "अपना देखें") : t("add your own →", "अपना जोड़ें →")}
+                </button>
+              </p>
+            ) : (
+              <p className="px-1 text-[11px] leading-snug text-zinc-500">
+                {t("Signed in · ", "साइन इन · ")}<span className="text-zinc-300">{realAcct?.name}</span>{" · "}
+                <button onClick={signOutAccount} className="text-teal-400 hover:underline">{t("sign out", "साइन आउट")}</button>
+              </p>
+            )}
+            <LanguageSelect value={language} onChange={setLanguage} className="w-full [&>select]:w-full" />
             <button
               onClick={() => {
                 localStorage.removeItem("mm_session");

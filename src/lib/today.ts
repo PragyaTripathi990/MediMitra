@@ -335,8 +335,8 @@ export function buildTodayPayload(
   };
 }
 
-export function getFamilySummaries(language: Language): FamilySummary[] {
-  return getPatients().map((m) => {
+export function getFamilySummaries(accountId: string, language: Language): FamilySummary[] {
+  return getPatients(accountId).map((m) => {
     const p = buildTodayPayload(m.id, language);
     const top = p.actions[0];
     const reports = getTimeline(m.id, language).reports;
