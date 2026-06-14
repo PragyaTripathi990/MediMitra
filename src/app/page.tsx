@@ -163,7 +163,7 @@ export default function Dashboard() {
     });
   }
   function shortDate(iso: string) {
-    return new Date(iso).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    return new Date(iso).toLocaleDateString("en-US", { month: "short", year: "numeric" });
   }
 
   const current = patients.find((p) => p.id === patient);
