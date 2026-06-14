@@ -103,7 +103,7 @@ export default function UploadPage() {
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
       setAnalysis(data.analysis as ReportAnalysis);
       try {
-        const tl = await fetch(`/api/timeline?patient=${pat}`).then((r) => r.json());
+        const tl = await fetch(`/api/timeline?patient=${pat}&lang=${lang}`).then((r) => r.json());
         setTimeline(tl as Timeline);
       } catch {
         /* timeline is best-effort */

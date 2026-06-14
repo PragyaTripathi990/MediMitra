@@ -1,7 +1,9 @@
 import Database from "better-sqlite3";
 import path from "path";
+import { LANG_LOCALE } from "./lang";
 import type {
   FamilyMember,
+  Language,
   MetricTrend,
   ReportAnalysis,
   ReportSummaryRow,
@@ -241,12 +243,12 @@ function linearProjectDays(
   return (threshold - latest) / slope;
 }
 
-function monthYear(iso: string): string {
+function monthYear(iso: string, locale = "en-US"): string {
   const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  return d.toLocaleDateString(locale, { month: "long", year: "numeric" });
 }
 
-export function getTimeline(patientId: string): Timeline {
+export function getTimeline(patientId: string, language: Language = "en"): Timeline {
   const db = getDb();
   const reportRows = db
     .prepare(
@@ -298,7 +300,11 @@ export function getTimeline(patientId: string): Timeline {
           new Date(points[points.length - 1].date).getTime() +
             days * 86400000,
         ).toISOString();
-        projection = `At this pace, HbA1c reaches the diabetes threshold (6.5%) around ${monthYear(eta)}.`;
+        const my = monthYear(eta, LANG_LOCALE[language]);
+        projection =
+          language === "hi"
+            ? `इसी गति से, HbA1c डायबिटीज़ सीमा (6.5%) तक ${my} के आसपास पहुँच जाएगा।`
+            : `At this pace, HbA1c reaches the diabetes threshold (6.5%) around ${my}.`;
       }
     }
 
@@ -323,7 +329,10 @@ export function getTimeline(patientId: string): Timeline {
 }
 
 // ---- appointments (Phase 3) ----
-export function getLatestAnalysis(patientId: string): ReportAnalysis | null {
+export function getLatestAnalysis(
+  patientId: string,
+  language: Language = "en",
+): ReportAnalysis | null {
   const db = getDb();
   const row = db
     .prepare(
@@ -332,7 +341,19 @@ export function getLatestAnalysis(patientId: string): ReportAnalysis | null {
     .get(patientId) as { analysis_json: string } | undefined;
   if (!row) return null;
   try {
-    return JSON.parse(row.analysis_json) as ReportAnalysis;
+    const parsed = JSON.parse(row.analysis_json) as ReportAnalysis & {
+      __seed?: string;
+    };
+    // Seeded reports store a marker; resolve to the in-code analysis, with
+    // Hindi overrides merged when the user is viewing in Hindi. Real uploads
+    // (no marker) are returned as stored, in whatever language they were made.
+    if (parsed.__seed && SEED_ANALYSIS[parsed.__seed]) {
+      const base = SEED_ANALYSIS[parsed.__seed];
+      return language === "hi" && SEED_HI[parsed.__seed]
+        ? { ...base, ...SEED_HI[parsed.__seed] }
+        : base;
+    }
+    return parsed as ReportAnalysis;
   } catch {
     return null;
   }
@@ -518,6 +539,87 @@ const SEED_ANALYSIS: Record<string, ReportAnalysis> = {
   },
 };
 
+// Hindi overrides for the patient-facing fields shown on Today + Plan.
+// Merged over the English base when language === "hi". Test/medicine names and
+// numbers stay in English (Latin), matching how patients read their reports.
+const SEED_HI: Record<string, Partial<ReportAnalysis>> = {
+  rakesh: {
+    summary:
+      "आपका ब्लड शुगर और कोलेस्ट्रॉल जोखिम वाली सीमा की ओर बढ़ रहे हैं — लेकिन अभी छोटे, नियमित बदलाव आपको डायबिटीज़ से दूर रख सकते हैं।",
+    triage: { level: "soon", message: "अगले 1–2 हफ़्तों में अपने डॉक्टर से मिलें और बढ़ते HbA1c व लिपिड पर चर्चा करें।" },
+    lifestylePlan: {
+      diet: [
+        "दिन में कम से कम एक बार सफ़ेद चावल की जगह बाजरा/रागी या ब्राउन राइस लें।",
+        "तले हुए स्नैक्स की जगह भुना चना, स्प्राउट्स या मुट्ठीभर मेवे लें।",
+        "हर भोजन में दाल और हरी सब्ज़ी शामिल करें; मीठी चाय दिन में एक बार ही।",
+        "मिठाई, कोल्ड ड्रिंक और पैकेज्ड जूस से बचें — ये शुगर और ट्राइग्लिसराइड्स बढ़ाते हैं।",
+        "सरसों या राइस-ब्रान तेल इस्तेमाल करें और कुल तेल ~3 चम्मच/दिन तक रखें।",
+      ],
+      activity: [
+        "रात के खाने के बाद रोज़ 30 मिनट तेज़ चलें — ब्लड शुगर के लिए सबसे असरदार।",
+        "सूर्य नमस्कार — 10 चक्र, हफ़्ते में 4 बार, इंसुलिन संवेदनशीलता सुधारने हेतु।",
+        "हल्की कसरत (स्क्वैट्स, वॉल पुश-अप्स) हफ़्ते में 2 बार।",
+        "लंबे समय तक बैठते हैं तो हर घंटे 3 मिनट खड़े होकर स्ट्रेच करें।",
+      ],
+    },
+    medicineGuidance: [
+      { topic: "Metformin (जेनेरिक)", suggestion: "जेनेरिक ₹30–60/महीना बनाम कुछ ब्रांड ₹150+ — वही दवा। बदलाव से पहले डॉक्टर से पूछें।" },
+      { topic: "उच्च LDL के लिए स्टैटिन", suggestion: "यदि डॉक्टर स्टैटिन शुरू करें तो जेनेरिक एटोरवास्टेटिन ₹40–80/महीना। केवल जानकारी — प्रिस्क्रिप्शन नहीं।" },
+    ],
+    schemeEligibility: {
+      likely: true,
+      scheme: "आयुष्मान भारत (PM-JAY)",
+      note: "यदि आपका परिवार पात्र है तो डायबिटीज़/हृदय की दीर्घकालिक देखभाल कवर हो सकती है — अपनी ABHA-लिंक्ड स्थिति जाँचें।",
+    },
+  },
+  sunita: {
+    summary:
+      "बढ़िया प्रगति — पिछले दो वर्षों में आपका हीमोग्लोबिन, थायरॉइड और विटामिन D सभी सुधरे हैं और अब स्वस्थ सीमा में हैं।",
+    triage: { level: "routine", message: "अपनी मौजूदा दिनचर्या जारी रखें और अगली नियमित जाँच पर दोबारा टेस्ट कराएँ।" },
+    lifestylePlan: {
+      diet: [
+        "पालक, मेथी, चुकंदर, गुड़ और खजूर से आयरन बनाए रखें।",
+        "आयरन वाले भोजन के साथ नींबू/आँवला (विटामिन C) लें ताकि आयरन अधिक सोखा जाए।",
+        "विटामिन-D वाले भोजन जारी रखें: फोर्टिफ़ाइड दूध, अंडे, मशरूम।",
+        "रोज़ एक गिलास दूध या कटोरी दही विटामिन D के साथ कैल्शियम देता है।",
+      ],
+      activity: [
+        "सुबह की धूप में रोज़ 20–30 मिनट टहलें — विटामिन D स्वाभाविक रूप से बढ़ता है।",
+        "हफ़्ते में 3 बार योग या स्ट्रेचिंग।",
+      ],
+    },
+    medicineGuidance: [
+      { topic: "आयरन / विटामिन D सप्लीमेंट", suggestion: "यदि जारी रखें तो जेनेरिक फ़ेरस + कोलेकैल्सीफ़ेरॉल बहुत सस्ते हैं। खुराक डॉक्टर से पुष्टि करें।" },
+    ],
+    schemeEligibility: { likely: false, scheme: "", note: "" },
+  },
+  mohan: {
+    summary:
+      "आपके गुर्दे का कार्य और रक्तचाप ध्यान माँगते हैं — क्रिएटिनिन बढ़ रहा है और eGFR घट रहा है, इसलिए जल्द जाँच ज़रूरी है।",
+    triage: { level: "soon", message: "गुर्दे के कार्य और रक्तचाप नियंत्रण की समीक्षा हेतु 1–2 हफ़्तों में डॉक्टर से मिलें।" },
+    lifestylePlan: {
+      diet: [
+        "नमक कम करें: अचार, पापड़, नमकीन और पैकेज्ड भोजन से बचें — गुर्दे और BP की रक्षा हेतु।",
+        "पोटैशियम की जाँच होने तक बहुत अधिक पोटैशियम वाले भोजन (नारियल पानी, केला) सीमित करें।",
+        "दाल और दही से मध्यम मात्रा में प्रोटीन लें; अधिक लाल मांस से बचें।",
+        "जब तक डॉक्टर ने पानी सीमित न किया हो, सादा पानी पीते रहें।",
+      ],
+      activity: [
+        "क्षमता अनुसार रोज़ हल्का 20–30 मिनट टहलें।",
+        "प्राणायाम / धीमी साँस, रोज़ 10 मिनट, रक्तचाप नियंत्रण में मदद हेतु।",
+      ],
+    },
+    medicineGuidance: [
+      { topic: "BP दवा की नियमितता", suggestion: "BP की दवा रोज़ एक ही समय लेना गुर्दों की रक्षा करता है। जेनेरिक विकल्प सस्ते हैं — डॉक्टर से समीक्षा करें।" },
+    ],
+    schemeEligibility: {
+      likely: true,
+      scheme: "आयुष्मान भारत (PM-JAY)",
+      note: "पात्र परिवारों के लिए गुर्दा और उच्च रक्तचाप की देखभाल कवर हो सकती है — अपनी ABHA-लिंक्ड स्थिति जाँचें।",
+    },
+  },
+};
+
 function seedIfEmpty(db: Database.Database) {
   const count = (
     db.prepare("SELECT COUNT(*) as c FROM reports").get() as { c: number }
@@ -530,7 +632,7 @@ function seedIfEmpty(db: Database.Database) {
     healthScore: number,
     type: string,
     findings: SeedFinding[],
-    analysis?: ReportAnalysis,
+    seedKey?: string,
   ) => {
     const info = db
       .prepare(
@@ -542,8 +644,8 @@ function seedIfEmpty(db: Database.Database) {
         dateISO,
         type,
         healthScore,
-        analysis ? analysis.summary : "Past report (seeded history).",
-        analysis ? JSON.stringify(analysis) : "{}",
+        seedKey ? SEED_ANALYSIS[seedKey].summary : "Past report (seeded history).",
+        seedKey ? JSON.stringify({ __seed: seedKey }) : "{}",
         dateISO,
       );
     const rid = Number(info.lastInsertRowid);
@@ -593,9 +695,10 @@ function seedIfEmpty(db: Database.Database) {
         ref: mt.ref,
         status: statusFor(mt.values[i], mt.ref),
       }));
-      // Attach the full analysis to the latest report so Plan is populated.
-      const analysis = i === DATES.length - 1 ? SEED_ANALYSIS[patientId] : undefined;
-      seed(patientId, `${d}T09:00:00.000Z`, scores[i], type, findings, analysis);
+      // Mark the latest report as seeded so getLatestAnalysis resolves it
+      // (in the viewing language) and the Plan tab is populated.
+      const seedKey = i === DATES.length - 1 ? patientId : undefined;
+      seed(patientId, `${d}T09:00:00.000Z`, scores[i], type, findings, seedKey);
     });
   };
 

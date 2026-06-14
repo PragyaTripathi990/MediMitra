@@ -281,8 +281,8 @@ export function buildTodayPayload(
   patientId: string,
   language: Language,
 ): TodayPayload {
-  const timeline = getTimeline(patientId);
-  const latest = getLatestAnalysis(patientId);
+  const timeline = getTimeline(patientId, language);
+  const latest = getLatestAnalysis(patientId, language);
   const appointments = getAppointments(patientId);
 
   const reports = timeline.reports;
@@ -339,7 +339,7 @@ export function getFamilySummaries(language: Language): FamilySummary[] {
   return getPatients().map((m) => {
     const p = buildTodayPayload(m.id, language);
     const top = p.actions[0];
-    const reports = getTimeline(m.id).reports;
+    const reports = getTimeline(m.id, language).reports;
     const last = reports[reports.length - 1] ?? null;
     return {
       id: m.id,

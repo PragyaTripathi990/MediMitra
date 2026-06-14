@@ -9,7 +9,7 @@ import BookNow from "@/components/BookNow";
 import ChatAssistant from "@/components/ChatAssistant";
 import Landing from "@/components/Landing";
 import LanguageSelect from "@/components/LanguageSelect";
-import { LANG_LOCALE } from "@/lib/lang";
+import { LANG_LOCALE, parseLang } from "@/lib/lang";
 import {
   IconToday,
   IconTrends,
@@ -91,17 +91,19 @@ export default function Dashboard() {
     setAuthed(localStorage.getItem("mm_session") === "1");
     setAuthReady(true);
     reloadPatients();
-    const tp = new URLSearchParams(window.location.search).get("tab");
+    const params = new URLSearchParams(window.location.search);
+    const tp = params.get("tab");
     if (tp && ["today", "trends", "family", "plan", "records"].includes(tp)) {
       setTab(tp as Tab);
     }
+    if (params.get("lang")) setLanguage(parseLang(params.get("lang")));
   }, [reloadPatients]);
 
   const load = useCallback(async (p: string, lang: Language) => {
     try {
       const [td, tl] = await Promise.all([
         fetch(`/api/today?patient=${p}&lang=${lang}`).then((r) => r.json()),
-        fetch(`/api/timeline?patient=${p}`).then((r) => r.json()),
+        fetch(`/api/timeline?patient=${p}&lang=${lang}`).then((r) => r.json()),
       ]);
       setToday(td as TodayPayload);
       setTimeline(tl as Timeline);
