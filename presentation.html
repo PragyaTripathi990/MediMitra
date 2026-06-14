@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MediMitra — Pitch Deck</title>
+<style>
+  :root{
+    --bg:#060708; --ink:#e7e7ea; --muted:#9b9ba3; --faint:#6b6b73;
+    --teal:#2dd4bf; --indigo:#818cf8; --amber:#fbbf24; --rose:#fb7185; --sky:#38bdf8;
+    --line:rgba(255,255,255,.10); --line2:rgba(255,255,255,.16);
+    --card:rgba(255,255,255,.045);
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  /* ambient background */
+  .aurora,.aurora2{position:fixed;inset:0;z-index:0;pointer-events:none;filter:blur(80px);opacity:.55}
+  .aurora{background:radial-gradient(45% 45% at 18% 12%,rgba(45,212,191,.22),transparent 70%)}
+  .aurora2{background:radial-gradient(48% 48% at 85% 90%,rgba(129,140,248,.20),transparent 70%)}
+  .dots{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+    background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);
+    background-size:34px 34px}
+
+  /* scaled 16:9 stage */
+  #stage{position:fixed;left:50%;top:50%;width:1280px;height:720px;
+    transform:translate(-50%,-50%) scale(1);transform-origin:center;z-index:1}
+  .slide{position:absolute;inset:0;padding:64px 72px;display:none;flex-direction:column;
+    opacity:0;transition:opacity .45s ease, transform .45s ease;transform:translateY(14px)}
+  .slide.active{display:flex;opacity:1;transform:none}
+
+  /* shared bits */
+  .label{font-family:var(--mono);font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:var(--teal)}
+  .chip{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--teal);
+    border:1px solid rgba(45,212,191,.3);background:rgba(45,212,191,.08);
+    padding:7px 14px;border-radius:999px}
+  .logo{width:46px;height:46px;border-radius:13px;background:var(--teal);color:#04110f;
+    display:grid;place-items:center;font-weight:800;font-size:24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:22px 24px;backdrop-filter:blur(12px)}
+  .muted{color:var(--muted)} .faint{color:var(--faint)}
+  h1{font-size:62px;line-height:1.04;font-weight:800;letter-spacing:-.02em}
+  h2{font-size:40px;font-weight:800;letter-spacing:-.015em}
+  .grad{background:linear-gradient(100deg,#fff 30%,var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .row{display:flex} .col{display:flex;flex-direction:column}
+  .grow{flex:1}
+
+  /* nav UI */
+  #bar{position:fixed;left:0;top:0;height:3px;background:var(--teal);width:0;z-index:5;transition:width .4s ease}
+  #count{position:fixed;right:22px;top:18px;z-index:5;font-family:var(--mono);font-size:12px;
+    letter-spacing:.15em;color:var(--faint)}
+  #dots{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:5;display:flex;gap:9px}
+  #dots button{width:8px;height:8px;border-radius:99px;border:0;background:rgba(255,255,255,.2);cursor:pointer;padding:0;transition:.25s}
+  #dots button.on{background:var(--teal);width:22px}
+  #hint{position:fixed;left:22px;bottom:18px;z-index:5;font-family:var(--mono);font-size:11px;
+    letter-spacing:.12em;color:var(--faint)}
+  .arrow{position:fixed;top:50%;transform:translateY(-50%);z-index:5;width:44px;height:44px;border-radius:99px;
+    border:1px solid var(--line2);background:rgba(0,0,0,.3);color:var(--ink);cursor:pointer;font-size:18px;
+    display:grid;place-items:center;opacity:.5;transition:.2s}
+  .arrow:hover{opacity:1;background:rgba(255,255,255,.08)}
+  #prev{left:18px} #next{right:18px}
+
+  /* ---- slide 1 ---- */
+  .s1{justify-content:center}
+  .s1 .brand{display:flex;align-items:center;gap:14px;margin:26px 0 22px}
+  .s1 .brand span{font-size:26px;font-weight:700}
+  .s1 .sub{font-size:21px;line-height:1.5;color:var(--muted);max-width:830px;margin-top:24px}
+  .s1 .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;
+    font-family:var(--mono);font-size:13px;color:var(--faint);letter-spacing:.06em}
+
+  /* ---- problem/solution ---- */
+  .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:18px}
+  .three .card .n{font-family:var(--mono);font-size:12px;color:var(--rose);letter-spacing:.1em}
+  .three .t{font-size:19px;font-weight:700;margin:10px 0 7px}
+  .three p{font-size:14.5px;line-height:1.5;color:var(--muted)}
+  .verbs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:14px}
+  .verbs .v{border:1px solid rgba(45,212,191,.25);background:rgba(45,212,191,.06);border-radius:18px;padding:18px 20px}
+  .verbs .v b{display:block;font-family:var(--mono);letter-spacing:.16em;font-size:13px;color:var(--teal);text-transform:uppercase}
+  .verbs .v p{margin-top:7px;font-size:14px;color:var(--muted);line-height:1.45}
+  .joiner{display:flex;align-items:center;gap:14px;margin:22px 0 4px}
+  .joiner .ln{height:1px;background:var(--line);flex:1}
+
+  /* ---- product ---- */
+  .prodgrid{display:grid;grid-template-columns:340px 1fr;gap:22px;margin-top:18px;flex:1}
+  .mock{background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+    border:1px solid var(--line);border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:16px}
+  .ring-wrap{display:flex;align-items:center;gap:16px}
+  .verdict{font-size:13.5px;line-height:1.45;color:var(--muted)}
+  .projbox{display:flex;align-items:center;gap:12px;border:1px solid rgba(251,191,36,.25);
+    background:rgba(251,191,36,.07);border-radius:14px;padding:12px 14px}
+  .projbox b{color:var(--amber);font-size:12.5px;font-weight:600;line-height:1.35}
+  .feats{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .feat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px 16px}
+  .feat .ic{font-size:19px} .feat b{display:block;margin:8px 0 4px;font-size:15px}
+  .feat p{font-size:12.8px;color:var(--muted);line-height:1.4}
+  .principles{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px}
+  .principles span{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;color:var(--muted);
+    border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+
+  /* ---- tech ---- */
+  .techgrid{display:grid;grid-template-columns:1.05fr 1fr;gap:24px;margin-top:18px;flex:1}
+  .stack{display:flex;flex-direction:column;gap:9px}
+  .layer{border:1px solid var(--line);border-radius:14px;padding:13px 16px;background:var(--card);position:relative}
+  .layer .lt{font-weight:700;font-size:15px} .layer .ld{font-size:12.5px;color:var(--muted);margin-top:3px;font-family:var(--mono);letter-spacing:.02em}
+  .layer.api{border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)}
+  .layer.ai{border-color:rgba(129,140,248,.3);background:rgba(129,140,248,.06)}
+  .layer.data{border-color:rgba(45,212,191,.3);background:rgba(45,212,191,.06)}
+  .down{align-self:center;color:var(--faint);font-size:13px;line-height:1}
+  .flex2{display:flex;flex-direction:column;gap:13px}
+  .tflex{border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:var(--card)}
+  .tflex b{font-size:14.5px}.tflex p{font-size:12.8px;color:var(--muted);line-height:1.45;margin-top:5px}
+  .honest{margin-top:14px;font-size:12.5px;color:var(--faint);border-top:1px dashed var(--line);padding-top:12px;line-height:1.5}
+
+  /* ---- business ---- */
+  .bizgrid{display:grid;grid-template-columns:0.85fr 1.15fr;gap:24px;margin-top:18px;flex:1}
+  .funnel{display:flex;flex-direction:column;gap:11px;justify-content:center}
+  .tier{border-radius:14px;padding:14px 18px;border:1px solid var(--line)}
+  .tier .k{font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--teal)}
+  .tier .v{font-size:14px;color:var(--ink);margin-top:5px;line-height:1.4}
+  .tam{background:rgba(45,212,191,.05)} .sam{background:rgba(45,212,191,.09);margin:0 14px}
+  .som{background:rgba(45,212,191,.16);margin:0 28px;border-color:rgba(45,212,191,.4)}
+  .rev{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  .rev .r{border:1px solid var(--line);border-radius:13px;padding:12px 14px;background:var(--card)}
+  .rev .r b{font-size:13.5px;color:var(--teal)} .rev .r p{font-size:12.3px;color:var(--muted);margin-top:3px;line-height:1.35}
+  .moat{margin-top:13px;border:1px solid rgba(129,140,248,.3);background:rgba(129,140,248,.07);
+    border-radius:14px;padding:13px 16px;font-size:13px;line-height:1.5;color:var(--ink)}
+  .close{margin-top:auto;font-size:21px;font-weight:700;line-height:1.4;letter-spacing:-.01em;padding-top:18px}
+  .close .em{color:var(--teal)}
+
+  @media print{
+    @page{size:1280px 720px;margin:0}
+    html,body{overflow:visible;height:auto;background:var(--bg)}
+    .aurora,.aurora2,.dots{position:absolute}
+    #stage{position:relative;left:0;top:0;transform:none;width:1280px;height:auto}
+    .slide{position:relative;display:flex !important;opacity:1 !important;transform:none !important;
+      width:1280px;height:720px;page-break-after:always;break-after:page}
+    #bar,#count,#dots,#hint,.arrow{display:none !important}
+  }
+</style>
+</head>
+<body>
+<div class="aurora"></div><div class="aurora2"></div><div class="dots"></div>
+<div id="bar"></div><div id="count"></div>
+
+<button class="arrow" id="prev">‹</button>
+<button class="arrow" id="next">›</button>
+
+<div id="stage">
+
+  <!-- 1 · TITLE -->
+  <section class="slide s1">
+    <span class="chip">✦ CCCL Buildathon · T2PS2 — Digital Healthcare</span>
+    <div class="brand"><div class="logo">म</div><span>MediMitra</span></div>
+    <h1><span class="grad">The Health Operating System<br>for Indian families.</span></h1>
+    <p class="sub">Snap a lab report → understand it in your language → act on it.
+      One app that <b style="color:#fff">remembers, monitors, and manages</b> your whole family's health over time.</p>
+    <div class="foot">
+      <span>Next.js 16 · React 19 · Gemini · SQLite/FHIR · 5 Indian languages</span>
+      <span>medimitra · solo build</span>
+    </div>
+  </section>
+
+  <!-- 2 · PROBLEM → SOLUTION -->
+  <section class="slide">
+    <span class="label">The problem</span>
+    <h2 style="margin-top:14px">India has great hospitals & cheap medicine —<br>yet families still struggle.</h2>
+    <div class="three">
+      <div class="card"><div class="n">01 · MEMORY</div><div class="t">Fragmented records</div>
+        <p>Reports live as photos across phones & WhatsApp. Nobody remembers their cholesterol two years ago.</p></div>
+      <div class="card"><div class="n">02 · LITERACY</div><div class="t">Can't read the report</div>
+        <p>Patients don't understand their own results — and millions can't read English, or read at all.</p></div>
+      <div class="card"><div class="n">03 · ACCESS</div><div class="t">Cost & confusion</div>
+        <p>Which screening is due? Which hospital to trust? That a generic costs one-third the brand?</p></div>
+    </div>
+    <div class="joiner"><div class="ln"></div><span class="label" style="color:var(--teal)">Meet MediMitra</span><div class="ln"></div></div>
+    <div class="verbs">
+      <div class="v"><b>Remembers</b><p>A longitudinal, FHIR-shaped record of every report, value & medicine — for the whole family.</p></div>
+      <div class="v"><b>Monitors</b><p>Plain-language explanations, abnormal-value & drug-interaction alerts, and risk forecasts.</p></div>
+      <div class="v"><b>Manages</b><p>Books verified care, orders the cheapest generics, and answers any question by voice.</p></div>
+    </div>
+  </section>
+
+  <!-- 3 · PRODUCT & DESIGN -->
+  <section class="slide">
+    <span class="label">The product · designed for everyone</span>
+    <div class="prodgrid">
+      <div class="mock">
+        <div class="ring-wrap">
+          <svg width="92" height="92" viewBox="0 0 92 92">
+            <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="8"/>
+            <circle cx="46" cy="46" r="40" fill="none" stroke="url(#g)" stroke-width="8" stroke-linecap="round"
+              stroke-dasharray="251.2" stroke-dashoffset="146" transform="rotate(-90 46 46)"/>
+            <text x="46" y="50" text-anchor="middle" font-size="30" font-weight="800" fill="#fff">42</text>
+            <text x="46" y="65" text-anchor="middle" font-size="8" fill="#fb7185" font-family="monospace">▼ 6</text>
+            <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#fb7185"/><stop offset="1" stop-color="#fbbf24"/></linearGradient></defs>
+          </svg>
+          <div><div style="font-family:var(--mono);font-size:11px;letter-spacing:.15em;color:var(--faint)">HEALTH SCORE</div>
+            <div class="verdict" style="margin-top:6px">Your numbers are drifting up — small steps now keep you out of the diabetes range.</div></div>
+        </div>
+        <div class="projbox">
+          <svg width="78" height="34" viewBox="0 0 78 34"><polyline points="2,28 16,24 30,20 44,16 56,12"
+            fill="none" stroke="#fb7185" stroke-width="2.5"/><polyline points="56,12 68,7 76,4"
+            fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-dasharray="3 3"/></svg>
+          <b>⚡ At this pace, HbA1c hits the diabetes threshold by Aug 2026.</b>
+        </div>
+        <div class="principles" style="margin-top:2px">
+          <span>● Today</span><span>● Trends</span><span>● Family</span><span>● Plan</span><span>● Records</span><span>● Meds</span>
+        </div>
+      </div>
+      <div class="col">
+        <div class="feats">
+          <div class="feat"><div class="ic">📸</div><b>Report intelligence</b><p>Photo → score, triage, alerts, drug-interaction & lab-error detection.</p></div>
+          <div class="feat"><div class="ic">📈</div><b>Trends + forecast</b><p>Two years of dated curves; projects risk to the diabetes threshold.</p></div>
+          <div class="feat"><div class="ic">🗣️</div><b>Grounded AI chat</b><p>Answers from your record, cites dates, defers to a doctor — by voice.</p></div>
+          <div class="feat"><div class="ic">👨‍👩‍👧</div><b>Family OS</b><p>Add members; each has their own longitudinal record. Caregiver view.</p></div>
+          <div class="feat"><div class="ic">🏥</div><b>Verified booking</b><p>4.3★ guardrail, map, doctor-ready summary, calendar reminder.</p></div>
+          <div class="feat"><div class="ic">💊</div><b>Generic savings</b><p>Doctor inbox via ABDM; prices generic vs brand, finds the cheapest.</p></div>
+        </div>
+        <div class="principles">
+          <span>Premium dark UI</span><span>Voice-first</span><span>5 Indian languages</span>
+          <span>Elderly & low-literacy friendly</span><span>Works with zero AI calls</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · TECH / ARCHITECTURE -->
+  <section class="slide">
+    <span class="label">Under the hood · five clean layers</span>
+    <div class="techgrid">
+      <div class="stack">
+        <div class="layer"><div class="lt">Client — React 19 / Next.js App Router</div><div class="ld">/ · /upload · /prescription → fetch() only</div></div>
+        <div class="down">▼ HTTPS · JSON</div>
+        <div class="layer api"><div class="lt">API — stateless route handlers</div><div class="ld">analyze · today · timeline · family · book · chat · ask</div></div>
+        <div class="down">▼</div>
+        <div class="layer ai"><div class="lt">AI provider abstraction</div><div class="ld">getProvider() → Gemini | Claude · structured · grounded · fallback</div></div>
+        <div class="down">▼</div>
+        <div class="layer data"><div class="lt">Data — SQLite (better-sqlite3)</div><div class="ld">patients · reports · metrics · appointments → maps 1:1 to FHIR R4</div></div>
+      </div>
+      <div class="flex2">
+        <div class="tflex"><b>🔒 AI that can't go rogue</b><p>Schema-validated JSON (can't break the UI) + grounded in the patient's record (can't hallucinate). Keys stay server-side.</p></div>
+        <div class="tflex"><b>📐 Explainable forecast</b><p>Least-squares linear regression over real HbA1c history to the 6.5% threshold — not a black box.</p></div>
+        <div class="tflex"><b>🇮🇳 FHIR R4 / ABDM-native</b><p>Speaks India's national health-data standard by design — interoperable with ABHA, labs & hospitals.</p></div>
+        <div class="tflex"><b>⚙️ Built to scale</b><p>Stateless API scales horizontally; SQLite → Postgres is one module; AI degrades gracefully.</p></div>
+        <div class="honest"><b style="color:var(--muted)">Honest on auth:</b> a demo session today → drops into JWT + ABHA/OAuth behind one middleware. Bounded productionization, not a rebuild.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · BUSINESS / WHY WE WIN -->
+  <section class="slide">
+    <span class="label">Why we win · market, money & moat</span>
+    <div class="bizgrid">
+      <div class="funnel">
+        <div class="tier tam"><div class="k">TAM</div><div class="v">India digital health → tens of $B by 2030; ~750M smartphone users.</div></div>
+        <div class="tier sam"><div class="k">SAM</div><div class="v">~150–200M urban + tier-2 households with chronic / elderly care.</div></div>
+        <div class="tier som"><div class="k">SOM · 3-yr</div><div class="v">1–2M paying families — strong early business at ₹150/mo + transactions.</div></div>
+      </div>
+      <div class="col">
+        <div class="rev">
+          <div class="r"><b>Lab brokerage</b><p>10–30% referral on home-collection tests (Apollo, Thyrocare, 1mg).</p></div>
+          <div class="r"><b>Pharmacy</b><p>8–20% on generic orders — and the patient still saves money.</p></div>
+          <div class="r"><b>Teleconsult / referral</b><p>Take-rate on booked consultations.</p></div>
+          <div class="r"><b>Premium + insurance</b><p>₹99–299/mo families; PM-JAY & cover lead-gen.</p></div>
+        </div>
+        <div class="moat"><b style="color:var(--indigo)">Moat = the longitudinal family record.</b> Switching cost compounds with every stored report. Plus AI-native design, FHIR/ABDM interoperability — and an ethical <b>4.3★ guardrail</b> that makes trust the business model.</div>
+      </div>
+    </div>
+    <div class="close">ChatGPT explains one report and forgets it.<br><span class="em">MediMitra remembers your family's health for life</span> — and acts on it.</div>
+  </section>
+
+</div>
+
+<div id="dots"></div>
+<div id="hint">← → / Space · F fullscreen · P print→PDF</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  const stage=document.getElementById('stage');
+  const bar=document.getElementById('bar'),count=document.getElementById('count'),dotsEl=document.getElementById('dots');
+  let i=0;
+  slides.forEach((_,n)=>{const b=document.createElement('button');b.onclick=()=>go(n);dotsEl.appendChild(b);});
+  const dots=[...dotsEl.children];
+  function go(n){i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    dots.forEach((d,k)=>d.classList.toggle('on',k===i));
+    bar.style.width=((i+1)/slides.length*100)+'%';
+    count.textContent=String(i+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0');
+    if(location.hash!=='#'+(i+1))history.replaceState(null,'','#'+(i+1));
+  }
+  function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);
+    stage.style.transform='translate(-50%,-50%) scale('+s+')';}
+  addEventListener('resize',fit);
+  addEventListener('keydown',e=>{
+    if(['ArrowRight',' ','PageDown'].includes(e.key)){e.preventDefault();go(i+1);}
+    else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(i-1);}
+    else if(e.key.toLowerCase()==='f'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen();}
+  });
+  document.getElementById('next').onclick=()=>go(i+1);
+  document.getElementById('prev').onclick=()=>go(i-1);
+  fit();
+  go(location.hash?parseInt(location.hash.slice(1))-1||0:0);
+</script>
+</body>
+</html>
